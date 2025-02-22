@@ -1,55 +1,41 @@
-"""
-This module runs extraction of data from the sources defined in the sources.yml file.
-"""
 import yaml
 import os
 import sys
 from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import mkstemp, TemporaryDirectory
 
+# Adjust the following paths as needed.
+BASE_DIR = Path(__file__).resolve().parent  # directory of __main__.py
 
-from load.loaders import load_file_from_storage, load_file_to_pg,\
-      load_shapefile_from_storage, load_shapefile_to_pg,\
-      list_tables_in_pg
+# Load Snowflake profile from profiles.yml (assuming it's in the same directory as __main__.py)
+with open(BASE_DIR / "profiles.yml", "r") as pf:
+    profiles = yaml.safe_load(pf)
 
-STORAGE_TO_PG = "storage_to_pg.yml"
+sf_config = profiles['makeopendata']['outputs'][profiles['makeopendata']['target']]
 
-if __name__ == "__main__":
-    production = '--production' in sys.argv
+# Load your storage configuration (adjust the path if needed)
+with open(BASE_DIR / "storage_to_pg.yml", "r") as sf:
+    storage_to_sf = yaml.safe_load(sf)
 
-    with open(Path(os.path.dirname(__file__)) / STORAGE_TO_PG, "r") as ymlfile:
-        storage_to_pg = yaml.safe_load(ymlfile)
+from load.loaders import (
+    load_file_from_storage,
+    load_file_to_sf,
+    list_tables_in_sf
+)
 
-    tables_in_pg_list = list_tables_in_pg(storage_to_pg)
+tables_in_sf = list_tables_in_sf(storage_to_sf, sf_config)
 
-    for pg_table, data_infos in storage_to_pg.items():
-        
-        if pg_table in tables_in_pg_list:
-            print(f"Table already exist: {pg_table}")
-
-        elif not production and data_infos.get('production', False):
-            print(f"Skipping {pg_table} in non-production mode")
-
-        else:
-            print(f"Processing {pg_table}")
-            if data_infos['file_format'] in ['csv', 'json']:
-                with NamedTemporaryFile(suffix='.csv', delete=True) as tmpfile:
-                    tmpfile_csv_path = tmpfile.name
-                    
-                    print(f"Loading from storage: {pg_table}")
-                    load_file_from_storage(tmpfile_csv_path, data_infos)
-                    
-                    print(f"Loading to PG: {pg_table}")
-                    load_file_to_pg(tmpfile_csv_path, pg_table, data_infos)
-                    
-                    print("***")
-            elif  data_infos['file_format'] == 'shape':
-                with TemporaryDirectory() as tmpfolder, NamedTemporaryFile(suffix='.zip', delete=True) as tmpzipfile:
-                    tmpfolder_name = tmpfolder
-                    tmpzip_name = tmpzipfile.name
-
-                    print(f"Loading from storage: {pg_table}")
-                    load_shapefile_from_storage(tmpfolder_name, tmpzip_name, data_infos)
-
-                    print(f"Loading to PG: {pg_table}")
-                    load_shapefile_to_pg(tmpfolder_name, pg_table, data_infos)
+for table_name, data_infos in storage_to_sf.items():
+    if table_name in tables_in_sf:
+        print(f"Table already exists: {table_name}")
+    else:
+        print(f"Processing {table_name}")
+        # Create a temporary CSV file using mkstemp (so it's not locked on Windows)
+        fd, tmp_csv_path = mkstemp(suffix='.csv')
+        os.close(fd)
+        print(f"Downloading file for {table_name} ...")
+        load_file_from_storage(tmp_csv_path, data_infos)
+        print(f"Loading {table_name} into Snowflake ...")
+        load_file_to_sf(tmp_csv_path, table_name, data_infos, sf_config)
+        os.remove(tmp_csv_path)
+        print("***")
