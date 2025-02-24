@@ -31,9 +31,9 @@ with renomer_bmo as (
         "Nom_métier_BMO" as nom_metier,
         "Famille_met" as code_famille_metier,
         "Lbl_fam_met" as libelle_famille_metier,
-	    cast(nullif(met, '*') as numeric) as nb_projet_recrutement,
-        cast(nullif(xmet, '*') as numeric) as nb_projet_recrutement_difficile,
-        cast(nullif(smet, '*') as numeric) as nb_projet_recrutement_saisonnier
+	    cast(nullif("met", '*') as numeric) as nb_projet_recrutement,
+        cast(nullif("xmet", '*') as numeric) as nb_projet_recrutement_difficile,
+        cast(nullif("smet", '*') as numeric) as nb_projet_recrutement_saisonnier
     from {{ source('sources', 'bmo_2024') }}
 ),
 unpivot_bmo_recrutements as (

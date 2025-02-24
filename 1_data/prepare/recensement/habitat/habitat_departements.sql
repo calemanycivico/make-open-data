@@ -1,7 +1,6 @@
---- depends_on: {{ ref('logement_2020_valeurs') }}
 
+-- habitat_departements.sql
 {{ config(materialized='table') }}
-
 
 select recensement_theme_departement.* ,
        infos_departements.nom_departement,

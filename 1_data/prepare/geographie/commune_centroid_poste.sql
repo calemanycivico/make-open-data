@@ -2,18 +2,18 @@
 
 WITH coordonnee_moyenne_par_code_postal AS (
     SELECT 
-        cog_poste.code_postal as code_postal,
+        cog_poste."code_postal" as code_postal,
         AVG(infos_communes.commune_latitude) AS avg_lat,
         AVG(infos_communes.commune_longitude) AS avg_lon
     FROM {{ source('sources', 'cog_poste')}} cog_poste
     LEFT JOIN {{ ref('infos_communes')}} infos_communes 
-    ON infos_communes.code_commune = cog_poste.code_commune_insee
-    GROUP BY cog_poste.code_postal
+    ON infos_communes.code_commune = cog_poste."code_commune_insee"
+    GROUP BY cog_poste."code_postal"
 ),
 distinct_code_postal AS (
     SELECT DISTINCT 
-        code_postal, 
-        code_commune_insee
+        "code_postal" as code_postal, 
+        "code_commune_insee" as code_commune_insee
     FROM {{ source('sources', 'cog_poste')}}
 ),
 cog_postal_et_distance_moyenne AS (
@@ -54,20 +54,20 @@ code_postal_et_commune_centrale AS (
 join_departements as (
     select 
         code_postal_et_commune_centrale.*,
-        cog_departements.nom as nom_departement,
-        cog_departements.region as code_region
+        cog_departements."nom" as nom_departement,
+        cog_departements."region" as code_region
     from code_postal_et_commune_centrale
     left join {{ source('sources', 'cog_departements')}} cog_departements 
-    on code_postal_et_commune_centrale.code_departement = cog_departements.code
+    on code_postal_et_commune_centrale.code_departement = cog_departements."code"
 ),
 
 join_regions as (
     select 
         join_departements.*,
-        cog_regions.nom as nom_region
+        cog_regions."nom" as nom_region
     from join_departements
     left join {{ source('sources', 'cog_regions')}} cog_regions 
-    on join_departements.code_region = cog_regions.code
+    on join_departements.code_region = cog_regions."code"
 )
 
 select *

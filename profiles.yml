@@ -5,17 +5,7 @@ makeopendata:
       authenticator: externalbrowser
       database: CALEMANY_DEV_BRONZE
       role: BASICO
-      schema: ' DBT_CORE'
-      threads: 4
-      type: snowflake
-      user: carlos.alemany@civica-soft.com
-      warehouse: WH_BASICO
-    production:
-      account: civicapartner.west-europe.azure
-      authenticator: externalbrowser
-      database: CALEMANY_DEV_BRONZE
-      role: BASICO
-      schema: ' DBT_CORE'
+      schema: DBT_CORE
       threads: 4
       type: snowflake
       user: carlos.alemany@civica-soft.com

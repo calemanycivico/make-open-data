@@ -2,7 +2,7 @@ import os
 import zipfile
 import tempfile
 from pathlib import Path
-
+import csv
 import pandas as pd
 import geopandas as gpd
 import snowflake.connector

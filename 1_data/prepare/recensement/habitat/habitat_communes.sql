@@ -8,7 +8,7 @@
 {{ config(materialized='table') }}
 
 with aggregated as (
-  {{ aggreger_colonnes_theme_geo('habitat', 'habitat_renomee', 'code_commune_insee')}}
+  {{ aggreger_colonnes_theme_geo('habitat', 'habitat_renomee', 'CODE_COMMUNE_INSEE')}}
 ),
   aggregated_with_infos_communes as (
     SELECT
@@ -18,7 +18,7 @@ with aggregated as (
     LEFT JOIN
 	    {{ ref('infos_communes') }} as infos_communes
     ON
-      aggregated.code_commune_insee = infos_communes.code_commune
+      aggregated.CODE_COMMUNE_INSEE = infos_communes.code_commune
   )
 
 SELECT 

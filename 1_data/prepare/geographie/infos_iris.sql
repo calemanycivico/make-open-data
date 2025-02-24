@@ -6,19 +6,17 @@ with infos_iris as (
         "IRIS" as suffix_iris_2024,
         "NOM_IRIS" as nom_iris,
         "INSEE_COM" as code_commune_2024,
-        geometry as contour_iris,
+        "geometry" as contour_iris,
         CASE 
             WHEN "TYP_IRIS" = 'A' THEN 'zone_activite'
             WHEN "TYP_IRIS" = 'H' THEN 'zone_habitat'
             WHEN "TYP_IRIS" = 'D' THEN 'zone_divers'
             WHEN "TYP_IRIS" = 'Z' THEN 'zone_non_iris'
-        END
-        as type_iris,
-        ST_PointOnSurface(geometry) as iris_centre_geopoint,
-        ST_X(ST_TRANSFORM(ST_PointOnSurface(geometry), 4674)) AS iris_longitude,
-        ST_Y(ST_TRANSFORM(ST_PointOnSurface(geometry), 4674)) AS iris_latitude
+        END as type_iris,
+        ST_CENTROID("geometry") as iris_centre_geopoint,
+        ST_X(ST_CENTROID("geometry")) AS iris_longitude,
+        ST_Y(ST_CENTROID("geometry")) AS iris_latitude
     from {{ source('sources', 'shape_iris_2024')}} as infos_iris
-
 )
 
 select 
@@ -31,5 +29,5 @@ select
     infos_communes.nom_departement,
     infos_communes.nom_region
 from infos_iris as infos_iris
-left join {{ ref('infos_communes') }} as infos_communes on infos_communes.code_commune = infos_iris.code_commune_2024
-
+left join {{ ref('infos_communes') }} as infos_communes 
+    on infos_communes.code_commune = infos_iris.code_commune_2024

@@ -18,20 +18,20 @@ with format_cog_poste as (
 join_departements as (
     select 
         format_cog_poste.*,
-        cog_departements.nom as nom_departement,
-        cog_departements.region as code_region
+        cog_departements."nom" as nom_departement,
+        cog_departements."region" as code_region
     from format_cog_poste
     left join {{ source('sources', 'cog_departements') }} cog_departements 
-        on format_cog_poste.code_departement = cog_departements.code
+        on format_cog_poste.code_departement = cog_departements."code"
 ),
 
 join_regions as (
     select 
         join_departements.*,
-        cog_regions."nom "as nom_region
+        cog_regions."nom"as nom_region
     from join_departements
     left join {{ source('sources', 'cog_regions') }} cog_regions 
-        on join_departements.code_region = cog_regions.code
+        on join_departements.code_region = cog_regions."code"
 )
 
 select *

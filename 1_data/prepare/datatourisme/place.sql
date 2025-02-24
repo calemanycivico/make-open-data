@@ -1,34 +1,49 @@
 {{ config(materialized='table') }}
 
+WITH base AS (
+    SELECT 
+         dp."Nom_du_POI" AS nom,
+         dp."Longitude",
+         dp."Latitude",
+         dp."Adresse_postale" AS adresse_postale,
+         SPLIT(dp."Code_postal_et_commune", '#')[0] AS code_postal,
+         SPLIT(dp."Code_postal_et_commune", '#')[1] AS commune,
+         dp."Createur_de_la_donnee" AS createur_de_la_donnee,
+         dp."SIT_diffuseur" AS sit_diffuseur,
+         dp."Date_de_mise_a_jour"::date AS date_de_mise_a_jour,
+         dp."Contacts_du_POI" AS contacts_du_poi,
+         dp."Classements_du_POI" AS classements_du_poi,
+         dp."Description" AS description,
+         TO_GEOMETRY(
+            'POINT(' || dp."Longitude"::string || ' ' || dp."Latitude"::string || ')',
+            4326
+         ) AS geopoint,
+         dp."Categories_de_POI" AS categories_de_poi
+    FROM {{ source('sources', 'datatourisme_place') }} AS dp
+),
+cat_extracted AS (
+    SELECT 
+         nom,
+         ARRAY_AGG(
+             DISTINCT regexp_replace(value::string, '.+[\/#]', '')
+         ) AS categories
+    FROM base,
+         LATERAL FLATTEN(INPUT => SPLIT(categories_de_poi, '|'))
+    GROUP BY nom
+)
 SELECT 
-    datatourisme_place."Nom_du_POI" as nom,
-    (
-        SELECT array_agg(
-            distinct regexp_replace(unnest_part, '.+[\/#]', '', 'g')
-        ) AS extracted_tags
-        FROM unnest(
-            regexp_split_to_array(
-                datatourisme_place."Categories_de_POI",
-                '\|'
-            )
-        ) AS unnest_part
-    ) as categories,
-    ST_SetSRID(
-        ST_MakePoint(
-            datatourisme_place."Longitude"::numeric,
-            datatourisme_place."Latitude"::numeric
-        ),
-        4326
-    ) as geopoint,
-    datatourisme_place."Adresse_postale" as adresse_postale,
-    (regexp_split_to_array(datatourisme_place."Code_postal_et_commune", '#')::VARCHAR[])[1] as code_postal,
-    (regexp_split_to_array(datatourisme_place."Code_postal_et_commune", '#')::VARCHAR[])[2] as commune,
-    -- "Covid19_mesures_specifiques" as covid19_mesures_specifiques,
-    datatourisme_place."Createur_de_la_donnee" as createur_de_la_donnee,
-    datatourisme_place."SIT_diffuseur" as sit_diffuseur,
-    datatourisme_place."Date_de_mise_a_jour"::date as date_de_mise_a_jour,
-    datatourisme_place."Contacts_du_POI" as contacts_du_poi,
-    datatourisme_place."Classements_du_POI" as classements_du_poi,
-    datatourisme_place."Description" as description
-    -- "URI_ID_du_POI" as uri_id_du_poi,
-FROM {{ source('sources', 'datatourisme_place') }} datatourisme_place
+    b.nom,
+    ce.categories,
+    b.geopoint,
+    b.adresse_postale,
+    b.code_postal,
+    b.commune,
+    b.createur_de_la_donnee,
+    b.sit_diffuseur,
+    b.date_de_mise_a_jour,
+    b.contacts_du_poi,
+    b.classements_du_poi,
+    b.description
+FROM base AS b
+LEFT JOIN cat_extracted AS ce
+  ON b.nom = ce.nom

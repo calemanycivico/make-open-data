@@ -1,10 +1,10 @@
 --- depends_on: {{ ref('logement_2020_valeurs') }}
 
+-- activite_departements.sql
 {{ config(materialized='table') }}
 
-
 select recensement_theme_departement.* ,
-       infos_departements.nom_departement,
+             infos_departements.nom_departement,
        infos_departements.code_region,
        infos_departements.nom_region,
        infos_departements.population_departement,
