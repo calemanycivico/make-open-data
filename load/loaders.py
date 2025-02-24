@@ -1,11 +1,13 @@
 import os
-import subprocess
-from tempfile import mkstemp, NamedTemporaryFile
-import shutil
+import zipfile
+import tempfile
 from pathlib import Path
 
 import pandas as pd
+import geopandas as gpd
 import snowflake.connector
+import requests
+from tqdm import tqdm
 
 def get_sf_connection(sf_config):
     """
@@ -27,6 +29,7 @@ def list_tables_in_sf(storage_to_sf, sf_config):
     """
     ctx = get_sf_connection(sf_config)
     cs = ctx.cursor()
+    # Assumes all entries in storage_to_sf share the same target schema.
     target_schema = list({data['db_schema'] for data in storage_to_sf.values()})[0]
     cs.execute(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = '{}'".format(target_schema.upper())
@@ -36,102 +39,167 @@ def list_tables_in_sf(storage_to_sf, sf_config):
     ctx.close()
     return [row[0] for row in result]
 
+def load_shapefile_to_csv(zip_path, output_csv):
+    """
+    Extracts a ZIP archive containing a shapefile, converts the geometry to WKT in EPSG:4326,
+    and saves it as a CSV file for Snowflake ingestion.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Extract all files inside the temporary directory
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(tmpdir)
+
+        # Locate the .shp file
+        shp_files = list(Path(tmpdir).glob("*.shp"))
+        if not shp_files:
+            raise ValueError("No .shp file found inside the ZIP archive.")
+
+        shp_file = str(shp_files[0])
+
+        # Read the shapefile with GeoPandas
+        gdf = gpd.read_file(shp_file)
+
+        # If the CRS is not EPSG:4326, reproject it.
+        if gdf.crs is not None and gdf.crs.to_string() != "EPSG:4326":
+            gdf = gdf.to_crs(epsg=4326)
+
+        # Convert geometry to WKT for Snowflake ingestion
+        gdf["geometry"] = gdf["geometry"].apply(lambda geom: geom.wkt if geom is not None else None)
+
+        # Save as CSV
+        gdf.to_csv(output_csv, index=False, quoting=csv.QUOTE_MINIMAL)
+    
+    return output_csv
+
 def load_file_from_storage(tmpfile_csv_path, data_infos):
     """
-    Download a CSV (or JSON file converted to CSV) from a remote URL.
-    Uses curl to download the file.
+    Download and process files from storage. 
+    Supports CSV, JSON, and SHP (zipped shapefiles).
     """
-    storage_path = data_infos["storage_path"]
-    
-    if data_infos['file_format'] == 'csv':
-        subprocess.run(['curl', '-o', tmpfile_csv_path, storage_path], check=True)
-    
-    elif data_infos['file_format'] == 'json':
-        # Use mkstemp for JSON to avoid file locking issues on Windows.
-        fd_json, tmp_json_path = mkstemp(suffix='.json')
-        os.close(fd_json)
-        subprocess.run(['curl', '-o', tmp_json_path, storage_path], check=True)
-        data = pd.read_json(tmp_json_path)
-        data.to_csv(tmpfile_csv_path, index=False)
-        os.remove(tmp_json_path)
+    url = data_infos["storage_path"]
+    file_format = data_infos["file_format"]
+
+    if file_format in ["csv", "json"]:
+        # Stream the download
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        total_size = int(response.headers.get("content-length", 0))
+        chunk_size = 1024
+
+        with open(tmpfile_csv_path, "wb") as f, tqdm(
+            total=total_size, unit="B", unit_scale=True, 
+            desc=f"Downloading {Path(tmpfile_csv_path).name}", leave=False
+        ) as pbar:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    pbar.update(len(chunk))
+
+        # Convert JSON -> CSV if needed
+        if file_format == "json":
+            df = pd.read_json(tmpfile_csv_path)
+            df.to_csv(tmpfile_csv_path, index=False)
+
+        return tmpfile_csv_path
+
+    elif file_format == "shp":
+        # We assume the shapefile is zipped
+        zip_path = tmpfile_csv_path + ".zip"
+
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        total_size = int(response.headers.get("content-length", 0))
+        chunk_size = 1024
+
+        with open(zip_path, "wb") as f, tqdm(
+            total=total_size, unit="B", unit_scale=True, 
+            desc=f"Downloading {Path(zip_path).name}", leave=False
+        ) as pbar:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    pbar.update(len(chunk))
+
+        # Convert the shapefile to CSV with WKT geometry
+        csv_path = load_shapefile_to_csv(zip_path, tmpfile_csv_path)
+        os.remove(zip_path)
+        return csv_path
+
     else:
-        raise ValueError(f"Unsupported file format in path: {storage_path}")
-    
-    return tmpfile_csv_path
+        raise ValueError(f"Unsupported file format: {file_format}")
 
-def get_columns_from_csv(file_path, delimiter):
+def load_file_to_sf(tmpfile_csv_path, table_name, data_infos, sf_config):
     """
-    Dynamically read the first line of the CSV to get the correct column names.
-    This approach strips any extraneous quotes that might be present in the header.
-    """
-    with open(file_path, 'r', encoding='utf-8') as f:
-        header_line = f.readline().strip()
-    # Split on the delimiter, strip whitespace and any surrounding double quotes.
-    columns = [col.strip().strip('"') for col in header_line.split(delimiter) if col.strip() != '']
-    return columns
-
-def load_file_to_sf(tmpfile_csv_path: str, table_name: str, data_infos, sf_config):
-    """
-    Load a CSV file into Snowflake by:
-      - Creating/replacing the target table in the schema specified by data_infos["db_schema"]
-      - Creating (if needed) an internal stage at <database>.<db_schema>.STG_DATA
-      - Creating a temporary file format (as defined in YAML)
-      - Using the PUT command to upload the local file into the stage
-      - Using COPY INTO to load the data into the table
-      - Dropping the temporary file format and cleaning up the stage
+    Load a CSV file into Snowflake, including spatial data if applicable.
+    In this "preprocess" approach, we create the table with the correct column types.
+    For shapefiles, if a "geometry" column exists, it is defined as GEOGRAPHY.
     """
     delimiter = data_infos.get("csv_delimiter", ",")
-    columns = get_columns_from_csv(tmpfile_csv_path, delimiter)
-    target_schema = data_infos["db_schema"].upper()  # Use uppercase for Snowflake
-    target_table = table_name.upper()                # Unquoted, so Snowflake stores in uppercase
+    target_schema = data_infos["db_schema"].upper()
+    target_table = table_name.upper()
 
-    # Connect to Snowflake
+    # Determine column names from the CSV using the correct delimiter.
+    df = pd.read_csv(tmpfile_csv_path, nrows=1, sep=delimiter)
+    columns = df.columns.tolist()
+
+    # Connect to Snowflake.
     ctx = get_sf_connection(sf_config)
     cs = ctx.cursor()
-    
-    # Create (or replace) the target table with the dynamically derived columns.
+
+    # Build table definition.
+    # For shapefiles (file_format "shp"), create "geometry" as GEOGRAPHY.
+    column_defs = []
+    for col in columns:
+        if col.lower() == "geometry" and data_infos.get("file_format") == "shp":
+            column_defs.append(f'"{col}" GEOGRAPHY')
+        else:
+            column_defs.append(f'"{col}" VARCHAR')
     create_table_stmt = (
         f"CREATE OR REPLACE TABLE {target_schema}.{target_table} ("
-        + ", ".join([f'"{col}" VARCHAR' for col in columns])
+        + ", ".join(column_defs)
         + ")"
     )
     cs.execute(create_table_stmt)
-    
-    # Define the stage name based on database and target_schema.
+
+    # Create or replace stage.
     stage_name = f"{sf_config['database']}.{target_schema}.STG_DATA"
-    
-    # Create (or replace) the internal stage.
     cs.execute(f"CREATE OR REPLACE STAGE {stage_name};")
-    
-    # Create a temporary file format for this file.
-    file_format_name = f"FF_{target_table}"
-    cs.execute(
-        f"CREATE OR REPLACE FILE FORMAT {file_format_name} "
-        f"TYPE = 'CSV' FIELD_DELIMITER = '{delimiter}' SKIP_HEADER = 1 "
-        f"ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE;"
-    )
-    
-    # Convert the local file path to a proper file URI.
+
+    # Upload file to Snowflake stage.
     file_uri = Path(tmpfile_csv_path).as_uri()
-    
-    # Upload the file to the internal stage.
     put_stmt = f"PUT '{file_uri}' @{stage_name} AUTO_COMPRESS=FALSE;"
     cs.execute(put_stmt)
-    
-    # Load data from the staged file into the target table.
-    copy_stmt = (
-        f"COPY INTO {target_schema}.{target_table} "
-        f"FROM @{stage_name}/{os.path.basename(tmpfile_csv_path)} "
-        f"FILE_FORMAT = (FORMAT_NAME = '{file_format_name}');"
-    )
+
+    # Copy data into Snowflake.
+    # The FIELD_OPTIONALLY_ENCLOSED_BY option tells Snowflake that fields might be quoted,
+    # so any commas within quotes (e.g. in WKT) will not be treated as delimiters.
+    copy_stmt = f"""
+    COPY INTO {target_schema}.{target_table}
+    FROM @{stage_name}/{os.path.basename(tmpfile_csv_path)}
+    FILE_FORMAT = (
+        TYPE = 'CSV'
+        FIELD_DELIMITER = '{delimiter}'
+        SKIP_HEADER = 1
+        FIELD_OPTIONALLY_ENCLOSED_BY = '\"'
+    );
+    """
     cs.execute(copy_stmt)
-    
-    # Drop the temporary file format.
-    cs.execute(f"DROP FILE FORMAT IF EXISTS {file_format_name};")
-    
-    # Optionally, remove the file from the stage.
+
+    # Cleanup stage.
     cs.execute(f"REMOVE @{stage_name};")
-    
     ctx.commit()
     cs.close()
     ctx.close()
+
+def process_file(tmpfile_csv_path, data_infos, table_name, sf_config, storage_to_sf):
+    """
+    Checks if the table exists and, if not, downloads the file and loads it into Snowflake.
+    """
+    existing_tables = list_tables_in_sf(storage_to_sf, sf_config)
+    if table_name.upper() in (tbl.upper() for tbl in existing_tables):
+        print(f"Table '{table_name.upper()}' already exists. Skipping download and load.")
+        return
+    
+    downloaded_file = load_file_from_storage(tmpfile_csv_path, data_infos)
+    load_file_to_sf(downloaded_file, table_name, data_infos, sf_config)
+    print(f"Loaded {table_name} into Snowflake.") 

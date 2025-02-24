@@ -3,7 +3,7 @@
 # table_name:  # The table's identifier
 #   storage_path:str  # The url to the raw file
 #   db_schema:str  # The name of the schema in the database
-#   file_format:str  # ['csv' | 'json' | 'shape'] The format of the file 
+#   file_format:str  # ['csv' | 'json' | 'shp'] The format of the file 
 #   csv_delimiter:str  # If file_format is 'csv': the delimiter used in the csv. Ignored if the format is different.
 #   production:bool  # Optional: Whether the file should only be loaded when loading the full base (production mode)
 
@@ -216,37 +216,37 @@ filosofi_commune_2021:
 shape_iris_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/IRIS_GE.zip"
   db_schema: "sources"
-  file_format: 'shape'
+  file_format: 'shp'
   
 shape_commune_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/COMMUNE.zip"
   db_schema: "sources"
-  file_format: 'shape'
+  file_format: 'shp'
 
 shape_arrondissement_municipal_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/ARRONDISSEMENT_MUNICIPAL.zip"
   db_schema: "sources"
-  file_format: 'shape'
+  file_format: 'shp'
 
 shape_arrondissement_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/ARRONDISSEMENT_MUNICIPAL.zip"
   db_schema: "sources"
-  file_format: 'shape'
+  file_format: 'shp'
 
 shape_departement_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/DEPARTEMENT.zip"
   db_schema: "sources"
-  file_format: 'shape'
+  file_format: 'shp'
 
 shape_region_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/REGION.zip"
   db_schema: "sources"
-  file_format: 'shape'
+  file_format: 'shp'
 
 shape_epci_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/EPCI.zip"
   db_schema: "sources"
-  file_format: 'shape'
+  file_format: 'shp'
 
 conso_energie_departement:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/conso_energie_departement/conso_energie_departement_annuelle.csv"
