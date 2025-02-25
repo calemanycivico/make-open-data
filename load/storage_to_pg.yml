@@ -218,10 +218,15 @@ shape_iris_2024:
   db_schema: "sources"
   file_format: 'shp'
   
+shape_region_2024:
+  storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/REGION.zip"
+  db_schema: "sources"
+  file_format: 'shp'
+
 shape_commune_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/COMMUNE.zip"
   db_schema: "sources"
-  file_format: 'shp'
+  file_format: 'shape'
 
 shape_arrondissement_municipal_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/ARRONDISSEMENT_MUNICIPAL.zip"
@@ -238,10 +243,6 @@ shape_departement_2024:
   db_schema: "sources"
   file_format: 'shp'
 
-shape_region_2024:
-  storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/REGION.zip"
-  db_schema: "sources"
-  file_format: 'shp'
 
 shape_epci_2024:
   storage_path: "https://make-open-data-s3.fra1.digitaloceanspaces.com/shape_files/EPCI.zip"

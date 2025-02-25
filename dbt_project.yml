@@ -16,3 +16,7 @@ clean-targets:
   - "dbt_packages"
 
 models:
+  makeopendata:
+  +persist_docs:
+    relation: true
+    columns: true
